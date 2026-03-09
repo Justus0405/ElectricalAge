@@ -14,9 +14,9 @@ import net.minecraft.util.ResourceLocation
 import net.minecraftforge.client.IItemRenderer
 import org.lwjgl.opengl.GL11
 
-class BrushDescriptor(name: String): GenericItemUsingDamageDescriptor(name) {
+class BrushDescriptor(name: String, iconName: String): GenericItemUsingDamageDescriptor(name) {
 
-    private val ricon = ResourceLocation("eln", "textures/items/" + name.lowercase().replace(" ", "") + ".png")
+    private val ricon = ResourceLocation("eln", "textures/items/brushes/$iconName.png")
 
 
     override fun getName(stack: ItemStack): String {
@@ -93,6 +93,6 @@ class BrushDescriptor(name: String): GenericItemUsingDamageDescriptor(name) {
     }
 
     companion object {
-        private val dryOverlay = ResourceLocation("eln", "textures/items/brushdryoverlay.png")
+        private val dryOverlay = ResourceLocation("eln", "textures/items/brushes/brush_dry_overlay.png")
     }
 }

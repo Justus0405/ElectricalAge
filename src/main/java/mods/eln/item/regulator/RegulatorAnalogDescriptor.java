@@ -6,9 +6,8 @@ import static mods.eln.item.regulator.IRegulatorDescriptor.RegulatorType.Analog;
 
 public class RegulatorAnalogDescriptor extends IRegulatorDescriptor {
 
-    public RegulatorAnalogDescriptor(String name, String iconName) {
+    public RegulatorAnalogDescriptor(String name) {
         super(name);
-        setDefaultIcon(iconName);
     }
 
     @Override

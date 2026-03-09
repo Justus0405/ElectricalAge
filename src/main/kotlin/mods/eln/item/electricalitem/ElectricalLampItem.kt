@@ -179,10 +179,14 @@ class ElectricalLampItem(name: String, var lightMin: Int, var rangeMin: Int, dis
         this.dischargeMin = dischargeMin
         this.dischargeMax = dischargeMax
         this.energyStorage = energyStorage
-        setDefaultIcon(name + "off")
-        boosted = ResourceLocation("eln", "textures/items/" + name.replace(" ", "").lowercase() + "boosted.png")
-        on = ResourceLocation("eln", "textures/items/" + name.replace(" ", "").lowercase() + "on.png")
-        off = ResourceLocation("eln", "textures/items/" + name.replace(" ", "").lowercase() + "off.png")
+        val base = when (name) {
+            "Small Flashlight" -> "flashlight_small"
+            "Improved Flashlight" -> "improved_flashlight"
+            else -> name.replace(" ", "").lowercase()
+        }
+        boosted = ResourceLocation("eln", "textures/items/tools/${base}_boosted.png")
+        on = ResourceLocation("eln", "textures/items/tools/${base}_on.png")
+        off = ResourceLocation("eln", "textures/items/tools/${base}_off.png")
         //	off = new ResourceLocation("eln", "/model/StoneFurnace/all.png");
     }
 }

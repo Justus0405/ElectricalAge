@@ -19,7 +19,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 
 class LampDescriptor(
-    name: String, iconName: String,
+    name: String,
     type: Type, socket: LampSocketType,
     nominalU: Double, nominalP: Double, nominalLight: Double, nominalLife: Double,
     vegetableGrowRate: Double, range: Int) : GenericItemUsingDamageDescriptorUpgrade(name), IConfigSharing {
@@ -132,7 +132,6 @@ class LampDescriptor(
     }
 
     init {
-        setDefaultIcon(iconName)
         this.type = type
         this.range = range
         this.socket = socket
