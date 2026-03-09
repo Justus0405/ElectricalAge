@@ -40,6 +40,62 @@ import kotlin.math.min
 import kotlin.math.max
 import kotlin.math.sin
 
+private data class ZoneBounds(
+    val minX: Int,
+    val maxX: Int,
+    val minY: Int,
+    val maxY: Int,
+    val minZ: Int,
+    val maxZ: Int
+)
+
+private fun parseZoneBounds(ics: EntityPlayerMP, args: List<String>, commandName: String): ZoneBounds? {
+    if (args.size == 1) {
+        val radius = args[0].toIntOrNull()
+        if (radius == null || radius < 0) {
+            cprint(ics, "${FC.BRIGHT_RED}Invalid radius '${args[0]}'", indent = 1)
+            cprint(ics, "${FC.BRIGHT_YELLOW}Usage: /eln $commandName <radius> or /eln $commandName x1 y1 z1 x2 y2 z2", indent = 1)
+            return null
+        }
+        val x = ics.playerCoordinates.posX
+        val y = ics.playerCoordinates.posY
+        val z = ics.playerCoordinates.posZ
+        return ZoneBounds(x - radius, x + radius, y - radius, y + radius, z - radius, z + radius)
+    }
+    if (args.size != 6) {
+        cprint(ics, "${FC.BRIGHT_YELLOW}Usage: /eln $commandName <radius> or /eln $commandName x1 y1 z1 x2 y2 z2", indent = 1)
+        return null
+    }
+    val coords = IntArray(6)
+    for (i in 0 until 6) {
+        val value = args[i].toIntOrNull()
+        if (value == null) {
+            cprint(ics, "${FC.BRIGHT_RED}Invalid coordinate '${args[i]}'", indent = 1)
+            return null
+        }
+        coords[i] = value
+    }
+    return ZoneBounds(
+        min(coords[0], coords[3]),
+        max(coords[0], coords[3]),
+        min(coords[1], coords[4]),
+        max(coords[1], coords[4]),
+        min(coords[2], coords[5]),
+        max(coords[2], coords[5])
+    )
+}
+
+private fun clearElnBlock(world: World, x: Int, y: Int, z: Int): Boolean {
+    val block = world.getBlock(x, y, z)
+    val isElnBlock =
+        block == Eln.sixNodeBlock ||
+            block == Eln.transparentNodeBlock ||
+            block == Eln.ghostBlock
+    if (!isElnBlock) return false
+    world.setBlockToAir(x, y, z)
+    return true
+}
+
 class ElnLsCommand: IConsoleCommand {
     override val name = "ls"
 
@@ -86,10 +142,17 @@ class ElnAgingCommand: IConsoleCommand {
     override fun runCommand(ics: ICommandSender, args: List<String>) {
         if (args.size == 1) {
             val aging = getArgBool(ics, args[0])?: return
+
             SaveConfig.instance?.batteryAging = aging
-            SaveConfig.instance?.electricalLampAging = aging
-            SaveConfig.instance?.heatFurnaceFuel = aging
             SaveConfig.instance?.infinitePortableBattery = !aging
+
+            SaveConfig.instance?.infiniteIncandescentLife = !aging
+            SaveConfig.instance?.infiniteEcoBulbLife = !aging
+            SaveConfig.instance?.infiniteLedBulbLife = !aging
+            SaveConfig.instance?.infiniteHalogenBulbLife = !aging
+
+            SaveConfig.instance?.heatFurnaceFuel = aging
+
             cprint(ics, "Batteries / Furnace Fuel / Lamp aging: ${FC.DARK_GREEN}${boolToStr(aging)}", indent = 1)
             cprint(ics, "Parameter saved in the map.", indent = 1)
         } else {
@@ -150,33 +213,105 @@ class ElnLampAgingCommand: IConsoleCommand {
     override val name = "lampAging"
 
     override fun runCommand(ics: ICommandSender, args: List<String>) {
-        if (args.size == 1) {
-            val lampAging = getArgBool(ics, args[0])?: return
-            SaveConfig.instance?.electricalLampAging = lampAging
-            cprint(ics, "Lamp aging: ${FC.DARK_GREEN}${boolToStr(lampAging)}", indent = 1)
-            cprint(ics, "Parameter saved in the map.", indent = 1)
-        } else {
-            cprint(ics, "This command only takes one argument - true or false")
+        var printError = false
+
+        if (args.size == 3) {
+            val domain = args[0]
+            val bulbType = args[1]
+            val aging = getArgBool(ics, args[2])?: return
+
+            var updateIncandescent = false
+            var updateEco = false
+            var updateLed = false
+            var updateHalogen = false
+
+            when (bulbType) {
+                "incandescent" -> updateIncandescent = true
+                "eco" -> updateEco = true
+                "led" -> updateLed = true
+                "halogen" -> updateHalogen = true
+                "all" -> {
+                    updateIncandescent = true
+                    updateEco = true
+                    updateLed = true
+                    updateHalogen = true
+                }
+                else -> printError = true
+            }
+
+            if (!printError) when (domain) {
+                "local" -> {
+                    if (updateIncandescent) SaveConfig.instance?.infiniteIncandescentLife = !aging
+                    if (updateEco) SaveConfig.instance?.infiniteEcoBulbLife = !aging
+                    if (updateLed) SaveConfig.instance?.infiniteLedBulbLife = !aging
+                    if (updateHalogen) SaveConfig.instance?.infiniteHalogenBulbLife = !aging
+
+                    cprint(ics, "Lamp aging: ${FC.DARK_GREEN}${bulbType}, ${FC.DARK_GREEN}${boolToStr(aging)}", indent = 1)
+                    cprint(ics, "Parameter saved in the map.", indent = 1)
+                }
+                "global" -> {
+                    if (updateIncandescent) {
+                        Eln.incandescentLampInfiniteLife = !aging
+                        Eln.config.get("lamp", "infiniteIncandescentLife", false).set(Eln.incandescentLampInfiniteLife)
+                    }
+                    if (updateEco) {
+                        Eln.ecoLampInfiniteLife = !aging
+                        Eln.config.get("lamp", "infiniteEcoLife", false).set(Eln.ecoLampInfiniteLife)
+                    }
+                    if (updateLed) {
+                        Eln.ledLampInfiniteLife = !aging
+                        Eln.config.get("lamp", "infiniteLedLife", false).set(Eln.ledLampInfiniteLife)
+                    }
+                    if (updateHalogen) {
+                        Eln.halogenLampInfiniteLife = !aging
+                        Eln.config.get("lamp", "infiniteHalogenLife", false).set(Eln.halogenLampInfiniteLife)
+                    }
+                    Eln.config.save()
+
+                    cprint(ics, "Lamp aging: ${FC.DARK_GREEN}${bulbType}, ${FC.DARK_GREEN}${boolToStr(aging)}", indent = 1)
+                    cprint(ics, "Parameter saved in the config file.", indent = 1)
+                }
+                else -> printError = true
+            }
         }
+        else printError = true
+
+        if (printError) cprint(ics, "This command takes three arguments - domain, bulb type, aging")
     }
 
     override fun getManPage(ics: ICommandSender, args: List<String>) {
         cprint(ics, "Enables/disables aging on lamps.", indent = 1)
-        cprint(ics, "Changes stored into the map.", indent = 1)
+        cprint(ics, "Changes stored into the map (local) or config file (global).", indent = 1)
         cprint(ics, "")
         cprint(ics, "Parameters :", indent = 1)
-        cprint(ics, "@0:bool : Lamp aging (enabled/disabled).", indent = 2)
+        cprint(ics, "@0:string : Domain (local/global).", indent = 2)
+        cprint(ics, "@1:string : Bulb Type (incandescent/eco/led/halogen/all).", indent = 2)
+        cprint(ics, "@2:bool : Aging (true/false).", indent = 2)
         cprint(ics, "")
     }
 
     override fun requiredPermission() = listOf(UserPermission.IS_OPERATOR)
 
     override fun getTabCompletion(args: List<String>): List<String> {
-        val options = listOf("true", "false")
-        return if (args.isEmpty() || args[0] == "") {
-            options
-        } else {
-            return options.filter {it.startsWith(args[0], ignoreCase = true)}
+        val arg0Options = listOf("local", "global")
+        val arg1Options = listOf("incandescent", "eco", "led", "halogen", "all")
+        val arg2Options = listOf("true", "false")
+
+        return when (args.size) {
+            0 -> arg0Options
+            1 -> {
+                if (args[0] == "") arg0Options
+                else arg0Options.filter {it.startsWith(args[0], ignoreCase = true)}
+            }
+            2 -> {
+                if (args[1] == "") arg1Options
+                else arg1Options.filter {it.startsWith(args[1], ignoreCase = true)}
+            }
+            3 -> {
+                if (args[2] == "") arg2Options
+                else arg2Options.filter {it.startsWith(args[2], ignoreCase = true)}
+            }
+            else -> listOf()
         }
     }
 }
@@ -374,7 +509,6 @@ class ElnManCommand: IConsoleCommand {
     override val name = "man"
 
     override fun runCommand(ics: ICommandSender, args: List<String>) {
-        println("man command args: $args")
         when (args.size) {
             0 -> {
                 cprint(ics, "Returns help for a given command.", indent = 1)
@@ -384,7 +518,7 @@ class ElnManCommand: IConsoleCommand {
                 cprint(ics, "")
             }
             else -> {
-                val command = ElnConsoleCommandList.mapNotNull { if (it.name.lowercase() == args[0]) it else null }.firstOrNull()
+                val command = findConsoleCommand(args[0])
                 if (command == null) {
                     cprint(ics, "Sorry, but no man page was found for ${args[0]}", indent = 1)
                 } else {
@@ -419,25 +553,13 @@ class ElnZoneDumpCommand : IConsoleCommand {
             cprint(ics, "${FC.BRIGHT_RED}This command can only be run by a player.", indent = 1)
             return
         }
-        if (args.size != 6) {
-            cprint(ics, "${FC.BRIGHT_YELLOW}Usage: /eln zonedump x1 y1 z1 x2 y2 z2", indent = 1)
-            return
-        }
-        val values = IntArray(6)
-        for (i in 0 until 6) {
-            val v = args[i].toIntOrNull()
-            if (v == null) {
-                cprint(ics, "${FC.BRIGHT_RED}Invalid coordinate '${args[i]}'", indent = 1)
-                return
-            }
-            values[i] = v
-        }
-        val minX = min(values[0], values[3])
-        val maxX = max(values[0], values[3])
-        val minY = min(values[1], values[4])
-        val maxY = max(values[1], values[4])
-        val minZ = min(values[2], values[5])
-        val maxZ = max(values[2], values[5])
+        val bounds = parseZoneBounds(ics, args, name) ?: return
+        val minX = bounds.minX
+        val maxX = bounds.maxX
+        val minY = bounds.minY
+        val maxY = bounds.maxY
+        val minZ = bounds.minZ
+        val maxZ = bounds.maxZ
 
         val world = ics.worldObj
         val dim = world.provider.dimensionId
@@ -528,7 +650,8 @@ class ElnZoneDumpCommand : IConsoleCommand {
     }
 
     override fun getManPage(ics: ICommandSender, args: List<String>) {
-        cprint(ics, "Dump Eln nodes and world blocks in a rectangular zone to a zonedump-<timestamp>.txt file.", indent = 1)
+        cprint(ics, "Dump Eln nodes and world blocks in a zone to a zonedump-<timestamp>.txt file.", indent = 1)
+        cprint(ics, "Usage: /eln zonedump <radius>", indent = 1)
         cprint(ics, "Usage: /eln zonedump x1 y1 z1 x2 y2 z2", indent = 1)
         cprint(ics, "")
     }
@@ -542,25 +665,13 @@ class ElnZoneCleanCommand : IConsoleCommand {
             cprint(ics, "${FC.BRIGHT_RED}This command can only be run by a player.", indent = 1)
             return
         }
-        if (args.size != 6) {
-            cprint(ics, "${FC.BRIGHT_YELLOW}Usage: /eln zoneclean x1 y1 z1 x2 y2 z2", indent = 1)
-            return
-        }
-        val coords = IntArray(6)
-        for (i in 0 until 6) {
-            val value = args[i].toIntOrNull()
-            if (value == null) {
-                cprint(ics, "${FC.BRIGHT_RED}Invalid coordinate '${args[i]}'", indent = 1)
-                return
-            }
-            coords[i] = value
-        }
-        val minX = min(coords[0], coords[3])
-        val maxX = max(coords[0], coords[3])
-        val minY = min(coords[1], coords[4])
-        val maxY = max(coords[1], coords[4])
-        val minZ = min(coords[2], coords[5])
-        val maxZ = max(coords[2], coords[5])
+        val bounds = parseZoneBounds(ics, args, name) ?: return
+        val minX = bounds.minX
+        val maxX = bounds.maxX
+        val minY = bounds.minY
+        val maxY = bounds.maxY
+        val minZ = bounds.minZ
+        val maxZ = bounds.maxZ
 
         val world = ics.worldObj
         val dim = world.provider.dimensionId
@@ -594,7 +705,7 @@ class ElnZoneCleanCommand : IConsoleCommand {
                 try {
                     node.onBreakBlock()
                 } catch (e: Exception) {
-                    println("zonerepair: onBreakBlock failed for $coord : ${e.message}")
+                    println("zoneclean: onBreakBlock failed for $coord : ${e.message}")
                 }
                 nodeManager?.removeNode(node)
                 if (expectedBlock != null && actualBlock == expectedBlock) {
@@ -613,9 +724,9 @@ class ElnZoneCleanCommand : IConsoleCommand {
                     if (!isNodeBlock) continue
                     val coord = Coordinate(x, y, z, dim)
                     if (coordKeyedNodes.containsKey(coord)) continue
-                    world.removeTileEntity(x, y, z)
-                    world.setBlockToAir(x, y, z)
-                    orphanBlocks++
+                    if (clearElnBlock(world, x, y, z)) {
+                        orphanBlocks++
+                    }
                 }
             }
         }
@@ -629,6 +740,7 @@ class ElnZoneCleanCommand : IConsoleCommand {
 
     override fun getManPage(ics: ICommandSender, args: List<String>) {
         cprint(ics, "Removes ghost nodes and orphaned Eln blocks within a rectangular zone.", indent = 1)
+        cprint(ics, "Usage: /eln zoneclean <radius>", indent = 1)
         cprint(ics, "Usage: /eln zoneclean x1 y1 z1 x2 y2 z2", indent = 1)
         cprint(ics, "Blocks removed this way must be rebuilt manually.", indent = 1)
         cprint(ics, "")
@@ -643,25 +755,13 @@ class ElnZoneRemoveCommand : IConsoleCommand {
             cprint(ics, "${FC.BRIGHT_RED}This command can only be run by a player.", indent = 1)
             return
         }
-        if (args.size != 6) {
-            cprint(ics, "${FC.BRIGHT_YELLOW}Usage: /eln zoneremove x1 y1 z1 x2 y2 z2", indent = 1)
-            return
-        }
-        val coords = IntArray(6)
-        for (i in 0 until 6) {
-            val parsed = args[i].toIntOrNull()
-            if (parsed == null) {
-                cprint(ics, "${FC.BRIGHT_RED}Invalid coordinate '${args[i]}'", indent = 1)
-                return
-            }
-            coords[i] = parsed
-        }
-        val minX = min(coords[0], coords[3])
-        val maxX = max(coords[0], coords[3])
-        val minY = min(coords[1], coords[4])
-        val maxY = max(coords[1], coords[4])
-        val minZ = min(coords[2], coords[5])
-        val maxZ = max(coords[2], coords[5])
+        val bounds = parseZoneBounds(ics, args, name) ?: return
+        val minX = bounds.minX
+        val maxX = bounds.maxX
+        val minY = bounds.minY
+        val maxY = bounds.maxY
+        val minZ = bounds.minZ
+        val maxZ = bounds.maxZ
 
         val world = ics.worldObj
         val dim = world.provider.dimensionId
@@ -731,6 +831,7 @@ class ElnZoneRemoveCommand : IConsoleCommand {
     override fun getManPage(ics: ICommandSender, args: List<String>) {
         cprint(ics, "Removes all Eln nodes and blocks within a rectangular zone.", indent = 1)
         cprint(ics, "Ghost nodes on the zone boundary notify their owners before removal.", indent = 1)
+        cprint(ics, "Usage: /eln zoneremove <radius>", indent = 1)
         cprint(ics, "Usage: /eln zoneremove x1 y1 z1 x2 y2 z2", indent = 1)
         cprint(ics, "")
     }
@@ -749,17 +850,6 @@ class ElnZoneRemoveCommand : IConsoleCommand {
             coord.z == minZ || coord.z == maxZ
     }
 
-    private fun clearElnBlock(world: World, x: Int, y: Int, z: Int): Boolean {
-        val block = world.getBlock(x, y, z)
-        val isElnBlock =
-            block == Eln.sixNodeBlock ||
-                block == Eln.transparentNodeBlock ||
-                block == Eln.ghostBlock
-        if (!isElnBlock) return false
-        world.removeTileEntity(x, y, z)
-        world.setBlockToAir(x, y, z)
-        return true
-    }
 }
 
 class ElnStopShaftCommand : IConsoleCommand {

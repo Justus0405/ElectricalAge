@@ -4,13 +4,16 @@ import mods.eln.cable.CableRender
 import mods.eln.cable.CableRenderDescriptor
 import mods.eln.cable.CableRenderType
 import mods.eln.misc.*
+import mods.eln.node.NodeManager
 import mods.eln.node.transparent.*
+import mods.eln.sim.IProcess
 import mods.eln.sim.process.destruct.WorldExplosion
 import mods.eln.sound.LoopedSound
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
 import net.minecraftforge.client.IItemRenderer
 import org.lwjgl.opengl.GL11
+import org.lwjgl.opengl.GL12
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import kotlin.reflect.KClass
@@ -161,7 +164,12 @@ open class ShaftRender(entity: TransparentNodeEntity, desc: TransparentNodeDescr
     fun draw(extra: () -> Unit) {
         preserveMatrix {
             front!!.glRotateXnRef()
+            GL11.glColor4f(1f, 1f, 1f, 1f)
             val scale = desc.modelScale
+            val rescaleNormals = scale != 1f
+            if (rescaleNormals) {
+                GL11.glEnable(GL12.GL_RESCALE_NORMAL)
+            }
             if (scale != 1f) {
                 GL11.glTranslatef(0f, (scale - 1f) / 2f, 0f)
             }
@@ -180,6 +188,10 @@ open class ShaftRender(entity: TransparentNodeEntity, desc: TransparentNodeDescr
                 desc.draw(-angle)
 
             extra()
+            GL11.glColor4f(1f, 1f, 1f, 1f)
+            if (rescaleNormals) {
+                GL11.glDisable(GL12.GL_RESCALE_NORMAL)
+            }
         }
 
         if (cableRender != null) {
@@ -235,9 +247,17 @@ abstract class SimpleShaftElement(node: TransparentNode, transparentNodeDescript
     var destructing = false
     override fun isShaftElementDestructing() = destructing
     private val shaftGhostNodes = mutableListOf<GhostShaftNode>()
+    private var shaftDebugProcessInstalled = false
 
     override val shaftConnectivity: Array<Direction>
         get() = arrayOf(front.left(), front.right())
+
+    override fun linkedShaftParts(fromSide: Direction): Iterable<ShaftPart> {
+        return shaftGhostNodes
+            .filter { NodeManager.instance?.getNodeFromCoordonate(it.coordonate()) === it }
+            .filter { isInternallyConnected(fromSide, it.ownerConnectionSide) }
+            .map { ShaftPart(it, it.ghostConnectionSide) }
+    }
 
     override fun initialize() {
         reconnect()
@@ -251,6 +271,8 @@ abstract class SimpleShaftElement(node: TransparentNode, transparentNodeDescript
         }
         val exp = WorldExplosion(this as ShaftElement).machineExplosion()
         slowProcessList.add(createShaftWatchdog(this).setDestroys(exp))
+        // Temporary shaft topology logger. Re-enable when debugging network splits again.
+        // installShaftDebugProcess()
 
         val desc = transparentNodeDescriptor as? SimpleShaftDescriptor
         desc?.shaftGhostPorts?.forEach { port ->
@@ -262,9 +284,7 @@ abstract class SimpleShaftElement(node: TransparentNode, transparentNodeDescript
         super.onBreakElement()
         destructing = true
         clearGhostShafts()
-        shaftConnectivity.forEach {
-            shaft.disconnectShaft(this)
-        }
+        shaft.disconnectShaft(this)
     }
 
     override fun networkSerialize(stream: DataOutputStream) {
@@ -304,7 +324,19 @@ abstract class SimpleShaftElement(node: TransparentNode, transparentNodeDescript
     }
 
     private fun clearGhostShafts() {
-        shaftGhostNodes.forEach { it.onBreakBlock() }
+        shaftGhostNodes.forEach {
+            if (NodeManager.instance?.getNodeFromCoordonate(it.coordonate()) === it) {
+                it.onBreakBlock()
+            }
+        }
         shaftGhostNodes.clear()
+    }
+
+    protected fun installShaftDebugProcess() {
+        if (shaftDebugProcessInstalled) return
+        shaftDebugProcessInstalled = true
+        slowProcessList.add(IProcess {
+            ShaftDebugLogger.logElement(this)
+        })
     }
 }
